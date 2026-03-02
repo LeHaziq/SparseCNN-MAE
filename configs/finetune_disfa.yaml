@@ -1,0 +1,48 @@
+seed: 42
+output_dir: outputs/finetune_disfa
+
+data:
+  root: /path/to/disfa
+  manifest: manifests/disfa_manifest.csv
+  au_list: [1, 2, 4, 6, 9, 12, 25, 26]
+  clip_len: 32
+  stride: 1
+  label_threshold: 0.0
+  video_backend: auto
+  align_mode: off
+  align_cache_dir: null
+  color_jitter: false
+  mean: [0.485, 0.456, 0.406]
+  std: [0.229, 0.224, 0.225]
+
+model:
+  in_channels: 3
+  input_size: [32, 112, 112]
+  patch_size: [2, 16, 16]
+  embed_dim: 192
+  mask_ratio: 0.9
+  encoder_channels: [192, 256]
+  encoder_blocks: [2, 2]
+  downsample_stages: [1]
+  decoder_channels: 192
+  prefer_spconv: true
+  loss_type: mse
+  visible_loss_weight: 0.0
+
+train:
+  epochs: 40
+  max_steps: -1
+  smoke: false
+  smoke_steps: 50
+  batch_size: 2
+  accum_steps: 8
+  num_workers: 4
+  amp: true
+  lr: 2.0e-4
+  weight_decay: 0.05
+  warmup_steps: 500
+  log_interval: 10
+  val_interval: 100
+  grad_clip: 1.0
+  freeze_backbone: false
+  pos_weight: null

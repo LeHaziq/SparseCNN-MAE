@@ -1,0 +1,25 @@
+# Core framework (reference target: PyTorch 2.10)
+torch==2.10.0
+torchvision==0.25.0
+torchaudio==2.10.0
+
+# Training / utils
+numpy>=1.24
+Pillow>=10.0
+PyYAML>=6.0
+tqdm>=4.66
+tensorboard>=2.14
+scikit-learn>=1.3
+
+# Video decoding backends (VideoClipReader falls back in this order)
+av>=12.0.0
+decord>=0.6.0
+
+# Optional sparse acceleration (install matching your CUDA)
+# Example (CUDA 12.1): spconv-cu121>=2.3.8
+# Example (CPU debug only): spconv>=2.3.8
+
+# Optional face alignment
+facenet-pytorch>=2.6.0
+insightface>=0.7.3
+onnxruntime-gpu>=1.18.0

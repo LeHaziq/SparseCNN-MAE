@@ -1,0 +1,45 @@
+seed: 42
+output_dir: outputs/pretrain_voxceleb2
+
+data:
+  root: /path/to/voxceleb2
+  train_manifest: manifests/voxceleb2_train.csv
+  val_manifest: manifests/voxceleb2_val.csv
+  clip_len: 32
+  stride: 2
+  video_backend: auto
+  align_mode: off
+  align_cache_dir: null
+  color_jitter: true
+  mean: [0.485, 0.456, 0.406]
+  std: [0.229, 0.224, 0.225]
+
+model:
+  in_channels: 3
+  input_size: [32, 112, 112]
+  patch_size: [2, 16, 16]
+  embed_dim: 192
+  mask_ratio: 0.9
+  encoder_channels: [192, 256]
+  encoder_blocks: [2, 2]
+  downsample_stages: [1]
+  decoder_channels: 192
+  prefer_spconv: true
+  loss_type: mse
+  visible_loss_weight: 0.05
+
+train:
+  epochs: 100
+  max_steps: -1
+  smoke: false
+  smoke_steps: 50
+  batch_size: 2
+  accum_steps: 8
+  num_workers: 4
+  amp: true
+  lr: 1.0e-4
+  weight_decay: 0.05
+  warmup_steps: 1000
+  log_interval: 10
+  val_interval: 200
+  grad_clip: 1.0
