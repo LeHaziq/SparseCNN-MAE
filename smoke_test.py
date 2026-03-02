@@ -32,7 +32,7 @@ def main() -> None:
 
     x = torch.randn(2, 3, 32, 112, 112, device=device)
 
-    scaler = torch.cuda.amp.GradScaler(enabled=device.type == "cuda")
+    scaler = torch.amp.GradScaler("cuda", enabled=device.type == "cuda")
     opt = torch.optim.AdamW(model.parameters(), lr=1e-4)
 
     opt.zero_grad(set_to_none=True)

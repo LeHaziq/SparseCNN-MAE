@@ -86,8 +86,11 @@ class VideoMAE(nn.Module):
         masked_weight = pixel_mask.to(per_pixel.dtype)
         visible_weight = (~pixel_mask).to(per_pixel.dtype)
 
-        masked_loss = (per_pixel * masked_weight).sum() / masked_weight.sum().clamp_min(1.0)
-        visible_loss = (per_pixel * visible_weight).sum() / visible_weight.sum().clamp_min(1.0)
+        # Include channel dimension in normalization to compute per-element mean loss.
+        masked_weight_full = masked_weight.expand_as(per_pixel)
+        visible_weight_full = visible_weight.expand_as(per_pixel)
+        masked_loss = (per_pixel * masked_weight_full).sum() / masked_weight_full.sum().clamp_min(1.0)
+        visible_loss = (per_pixel * visible_weight_full).sum() / visible_weight_full.sum().clamp_min(1.0)
         loss = masked_loss + self.visible_loss_weight * visible_loss
         return loss, masked_loss, visible_loss
 
