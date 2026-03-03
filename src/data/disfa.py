@@ -45,6 +45,18 @@ def _parse_au_filename(path: Path) -> Optional[int]:
     return int(m.group(1))
 
 
+def _parse_optional_int(value: object, default: int = 0) -> int:
+    if value is None:
+        return default
+    s = str(value).strip()
+    if not s:
+        return default
+    try:
+        return int(float(s))
+    except ValueError:
+        return default
+
+
 def _read_annotation_file(path: Path) -> list[tuple[int, float]]:
     rows: list[tuple[int, float]] = []
     with path.open("r", encoding="utf-8") as f:
@@ -241,7 +253,9 @@ class DISFADataset(Dataset):
                 frames = frames.permute(1, 2, 3, 0).contiguous()
         else:
             if row.get("video_path") and Path(row["video_path"]).exists():
-                n_total = int(row.get("num_frames", 0)) or self.reader.get_num_frames(row["video_path"])
+                n_total = _parse_optional_int(row.get("num_frames"), default=0)
+                if n_total <= 0:
+                    n_total = self.reader.get_num_frames(row["video_path"])
                 start, idxs = self._sample_indices(n_total)
                 sample = self.reader.read_clip(
                     path=row["video_path"],

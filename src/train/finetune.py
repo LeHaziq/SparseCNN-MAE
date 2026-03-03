@@ -29,6 +29,17 @@ def _autocast_context(device: torch.device, enabled: bool):
     return torch.autocast(device_type="cpu", dtype=torch.bfloat16)
 
 
+def _make_grad_scaler(device: torch.device, amp_enabled: bool):
+    enabled = amp_enabled and device.type == "cuda"
+    # torch.cuda.amp.GradScaler is deprecated in newer PyTorch versions.
+    if hasattr(torch, "amp") and hasattr(torch.amp, "GradScaler"):
+        try:
+            return torch.amp.GradScaler("cuda", enabled=enabled)
+        except TypeError:
+            return torch.amp.GradScaler(enabled=enabled)
+    return torch.cuda.amp.GradScaler(enabled=enabled)
+
+
 def _build_backbone(model_cfg: dict[str, Any]) -> VideoMAE:
     return VideoMAE(
         in_channels=int(model_cfg.get("in_channels", 3)),
@@ -199,7 +210,7 @@ def main() -> None:
         pos_weight = torch.tensor(pos_weight, dtype=torch.float32, device=device)
     criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
-    scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled and device.type == "cuda")
+    scaler = _make_grad_scaler(device=device, amp_enabled=amp_enabled)
 
     ckpt_mgr = CheckpointManager(str(out_dir / "checkpoints"))
     start_epoch = 0
