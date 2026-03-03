@@ -4,3 +4,16 @@ python -m train.pretrain \
   data.root=/home/froshi/repositories/datasets/voxceleb2 \
   data.train_manifest=manifests/voxceleb2_train.csv \
   data.val_manifest=manifests/voxceleb2_val.csv
+
+  python -m train.finetune \
+  --config configs/finetune_disfa.yaml \
+  --smoke \
+  --pretrained outputs/pretrain_voxceleb2/checkpoints/best.ckpt \
+  data.root=/home/froshi/repositories/datasets/DISFA \
+  data.manifest=manifests/disfa_manifest.csv
+
+  python scripts/make_disfa_manifest.py \
+  --root /home/froshi/repositories/datasets/DISFA \
+  --videos_root /home/froshi/repositories/datasets/DISFA/Videos_LeftCamera \
+  --annotations_root /home/froshi/repositories/datasets/DISFA/ActionUnit_Labels \
+  --out_csv manifests/disfa_manifest.csv
