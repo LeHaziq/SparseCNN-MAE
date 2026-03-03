@@ -8,7 +8,7 @@ data:
   clip_len: 32
   stride: 2
   video_backend: auto
-  align_mode: off
+  align_mode: "off"
   align_cache_dir: null
   color_jitter: true
   mean: [0.485, 0.456, 0.406]
