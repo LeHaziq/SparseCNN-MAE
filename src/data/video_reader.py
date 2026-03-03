@@ -15,6 +15,27 @@ class ClipSample:
     indices: torch.Tensor
 
 
+def _ensure_thwc_uint8(frames: torch.Tensor) -> torch.Tensor:
+    """Normalize frame layout to [T,H,W,C] uint8."""
+    if frames.dim() != 4:
+        raise RuntimeError(f"Expected 4D frames, got shape={tuple(frames.shape)}")
+
+    if frames.shape[-1] in (1, 3):
+        out = frames
+    elif frames.shape[1] in (1, 3):
+        # [T,C,H,W] -> [T,H,W,C]
+        out = frames.permute(0, 2, 3, 1).contiguous()
+    else:
+        raise RuntimeError(
+            "Unable to infer channel dimension for decoded frames. "
+            f"Expected [T,H,W,C] or [T,C,H,W], got shape={tuple(frames.shape)}"
+        )
+
+    if out.dtype != torch.uint8:
+        out = out.to(torch.uint8)
+    return out.contiguous()
+
+
 class _TorchvisionBackend:
     name = "torchvision.io.VideoReader"
 
@@ -218,6 +239,7 @@ class VideoClipReader:
                         raise RuntimeError("Decoded 0 frames")
                     pad = frames[-1:].repeat(num_frames - frames.shape[0], 1, 1, 1)
                     frames = torch.cat([frames, pad], dim=0)
+                frames = _ensure_thwc_uint8(frames)
                 return ClipSample(frames=frames, start_frame=start, indices=idx)
             except Exception as e:
                 last_err = e

@@ -27,6 +27,17 @@ def _autocast_context(device: torch.device, enabled: bool):
     return torch.autocast(device_type="cpu", dtype=torch.bfloat16)
 
 
+def _make_grad_scaler(device: torch.device, amp_enabled: bool):
+    enabled = amp_enabled and device.type == "cuda"
+    # torch.cuda.amp.GradScaler is deprecated in newer PyTorch versions.
+    if hasattr(torch, "amp") and hasattr(torch.amp, "GradScaler"):
+        try:
+            return torch.amp.GradScaler("cuda", enabled=enabled)
+        except TypeError:
+            return torch.amp.GradScaler(enabled=enabled)
+    return torch.cuda.amp.GradScaler(enabled=enabled)
+
+
 def _build_loader(cfg: dict[str, Any], split: str) -> DataLoader:
     data_cfg = cfg["data"]
     train = split == "train"
@@ -164,7 +175,7 @@ def main() -> None:
     total_updates = smoke_steps if smoke else (max_steps if max_steps > 0 else epochs * updates_per_epoch)
     warmup_steps = int(train_cfg.get("warmup_steps", 1000))
     scheduler = _build_scheduler(optimizer, warmup_steps=warmup_steps, total_steps=total_updates)
-    scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled and device.type == "cuda")
+    scaler = _make_grad_scaler(device=device, amp_enabled=amp_enabled)
 
     start_epoch = 0
     global_update_step = 0

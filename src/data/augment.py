@@ -9,10 +9,19 @@ import torchvision.transforms.functional as TF
 
 
 def frames_to_clip(frames: torch.Tensor) -> torch.Tensor:
-    """Convert [T,H,W,C] uint8 to [C,T,H,W] float32 in [0,1]."""
+    """Convert [T,H,W,C] or [T,C,H,W] uint8 to [C,T,H,W] float32 in [0,1]."""
     if frames.dim() != 4:
-        raise ValueError(f"Expected [T,H,W,C], got {frames.shape}")
-    clip = frames.permute(3, 0, 1, 2).contiguous().float() / 255.0
+        raise ValueError(f"Expected 4D frames, got {frames.shape}")
+    if frames.shape[-1] in (1, 3):
+        thwc = frames
+    elif frames.shape[1] in (1, 3):
+        thwc = frames.permute(0, 2, 3, 1).contiguous()
+    else:
+        raise ValueError(
+            "Unable to infer channel dimension for frames. "
+            f"Expected [T,H,W,C] or [T,C,H,W], got {frames.shape}"
+        )
+    clip = thwc.permute(3, 0, 1, 2).contiguous().float() / 255.0
     return clip
 
 

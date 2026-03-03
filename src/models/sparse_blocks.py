@@ -132,6 +132,9 @@ if HAS_SPCONV:
     class SparseResidualBlock3D(nn.Module):
         def __init__(self, channels: int, indice_key: str) -> None:
             super().__init__()
+            # Native algo is slower but avoids implicit-gemm tuner failures
+            # on some GPU/driver/spconv combinations.
+            algo = spconv.ConvAlgo.Native
             self.conv1 = spconv.SubMConv3d(
                 channels,
                 channels,
@@ -139,6 +142,7 @@ if HAS_SPCONV:
                 padding=1,
                 bias=False,
                 indice_key=f"{indice_key}_subm",
+                algo=algo,
             )
             self.bn1 = nn.BatchNorm1d(channels)
             self.conv2 = spconv.SubMConv3d(
@@ -148,6 +152,7 @@ if HAS_SPCONV:
                 padding=1,
                 bias=False,
                 indice_key=f"{indice_key}_subm",
+                algo=algo,
             )
             self.bn2 = nn.BatchNorm1d(channels)
             self.act = nn.ReLU(inplace=True)
@@ -175,6 +180,7 @@ if HAS_SPCONV:
                 padding=(0, 1, 1),
                 bias=False,
                 indice_key=f"{indice_key}_down",
+                algo=spconv.ConvAlgo.Native,
             )
             self.bn = nn.BatchNorm1d(out_channels)
             self.act = nn.ReLU(inplace=True)
@@ -207,6 +213,7 @@ if HAS_SPCONV:
                         kernel_size=1,
                         bias=False,
                         indice_key=f"stage{stage_id}_proj",
+                        algo=spconv.ConvAlgo.Native,
                     )
                 )
                 self.proj_bn = nn.BatchNorm1d(out_channels)
