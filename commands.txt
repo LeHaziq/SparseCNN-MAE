@@ -1,0 +1,6 @@
+python -m train.pretrain \
+  --config configs/pretrain_voxceleb2.yaml \
+  --smoke \
+  data.root=/home/froshi/repositories/datasets/voxceleb2 \
+  data.train_manifest=manifests/voxceleb2_train.csv \
+  data.val_manifest=manifests/voxceleb2_val.csv
