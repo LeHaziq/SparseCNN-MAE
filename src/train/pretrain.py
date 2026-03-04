@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import random
 from contextlib import nullcontext
 import math
+import numpy as np
 import pathlib
 from typing import Any
 
@@ -190,6 +192,16 @@ def main() -> None:
             scaler.load_state_dict(ckpt["scaler"])
         start_epoch = int(ckpt.get("epoch", 0))
         global_update_step = int(ckpt.get("global_update_step", 0))
+        if "best_metric" in ckpt:
+            ckpt_mgr.load_best_metric(ckpt["best_metric"])
+        if "rng_state" in ckpt:
+            torch.set_rng_state(ckpt["rng_state"])
+        if "cuda_rng_state" in ckpt and ckpt["cuda_rng_state"] is not None and torch.cuda.is_available():
+            torch.cuda.set_rng_state_all(ckpt["cuda_rng_state"])
+        if "numpy_rng_state" in ckpt:
+            np.random.set_state(ckpt["numpy_rng_state"])
+        if "python_rng_state" in ckpt:
+            random.setstate(ckpt["python_rng_state"])
         logger.info("Resumed from %s at epoch=%d update_step=%d", args.resume, start_epoch, global_update_step)
 
     log_interval = int(train_cfg.get("log_interval", 10))
@@ -267,6 +279,11 @@ def main() -> None:
                         "scaler": scaler.state_dict() if scaler.is_enabled() else None,
                         "epoch": epoch,
                         "global_update_step": global_update_step,
+                        "best_metric": ckpt_mgr.best_metric,
+                        "rng_state": torch.get_rng_state(),
+                        "cuda_rng_state": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
+                        "numpy_rng_state": np.random.get_state(),
+                        "python_rng_state": random.getstate(),
                         "config": cfg,
                     }
                     ckpt_mgr.save_latest(state)
