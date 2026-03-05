@@ -86,19 +86,29 @@ def main() -> None:
         color_jitter=False,
     )
 
+    train_cfg = cfg["train"]
+    num_workers = int(train_cfg.get("num_workers", 4))
+    loader_kwargs: dict[str, Any] = {}
+    if num_workers > 0:
+        loader_kwargs["persistent_workers"] = bool(train_cfg.get("persistent_workers", True))
+        prefetch_factor = train_cfg.get("prefetch_factor", 2)
+        if prefetch_factor is not None:
+            loader_kwargs["prefetch_factor"] = max(1, int(prefetch_factor))
+
     loader = torch.utils.data.DataLoader(
         ds,
-        batch_size=int(cfg["train"].get("batch_size", 2)),
+        batch_size=int(train_cfg.get("batch_size", 2)),
         shuffle=False,
-        num_workers=int(cfg["train"].get("num_workers", 4)),
+        num_workers=num_workers,
         pin_memory=True,
+        **loader_kwargs,
     )
 
     criterion = torch.nn.BCEWithLogitsLoss()
     meter = AUDetectionMeter()
     total_loss = 0.0
     n = 0
-    amp_enabled = bool(cfg["train"].get("amp", True))
+    amp_enabled = bool(train_cfg.get("amp", True))
 
     with torch.no_grad():
         for batch in loader:
