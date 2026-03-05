@@ -42,6 +42,35 @@ def _make_grad_scaler(device: torch.device, amp_enabled: bool):
     return torch.cuda.amp.GradScaler(enabled=enabled)
 
 
+def _configure_cuda_speed_flags(train_cfg: dict[str, Any], device: torch.device, logger) -> None:
+    if device.type != "cuda":
+        return
+
+    cudnn_benchmark = bool(train_cfg.get("cudnn_benchmark", True))
+    allow_tf32_matmul = bool(train_cfg.get("allow_tf32_matmul", True))
+    allow_tf32_cudnn = bool(train_cfg.get("allow_tf32_cudnn", True))
+    matmul_precision = train_cfg.get("float32_matmul_precision", "high")
+
+    torch.backends.cudnn.benchmark = cudnn_benchmark
+    if hasattr(torch.backends, "cuda") and hasattr(torch.backends.cuda, "matmul"):
+        torch.backends.cuda.matmul.allow_tf32 = allow_tf32_matmul
+    torch.backends.cudnn.allow_tf32 = allow_tf32_cudnn
+
+    if matmul_precision is not None:
+        try:
+            torch.set_float32_matmul_precision(str(matmul_precision))
+        except Exception as e:
+            logger.warning("Failed to set float32 matmul precision (%s): %s", matmul_precision, e)
+
+    logger.info(
+        "CUDA speed flags: cudnn_benchmark=%s, allow_tf32_matmul=%s, allow_tf32_cudnn=%s, float32_matmul_precision=%s",
+        cudnn_benchmark,
+        allow_tf32_matmul,
+        allow_tf32_cudnn,
+        str(matmul_precision),
+    )
+
+
 def _build_backbone(model_cfg: dict[str, Any]) -> VideoMAE:
     return VideoMAE(
         in_channels=int(model_cfg.get("in_channels", 3)),
@@ -80,14 +109,23 @@ def _build_loader(cfg: dict[str, Any], split: str, smoke: bool = False) -> DataL
         # Keep memory/time small while still exercising the full path.
         ds.rows = ds.rows[: max(4, min(32, len(ds.rows)))]
 
+    num_workers = int(cfg["train"].get("num_workers", 4))
+    loader_kwargs: dict[str, Any] = {}
+    if num_workers > 0:
+        loader_kwargs["persistent_workers"] = bool(cfg["train"].get("persistent_workers", True))
+        prefetch_factor = cfg["train"].get("prefetch_factor", 2)
+        if prefetch_factor is not None:
+            loader_kwargs["prefetch_factor"] = max(1, int(prefetch_factor))
+
     loader = DataLoader(
         ds,
         batch_size=int(cfg["train"].get("batch_size", 2)),
         shuffle=(split == "train"),
-        num_workers=int(cfg["train"].get("num_workers", 4)),
+        num_workers=num_workers,
         pin_memory=True,
         drop_last=(split == "train"),
         worker_init_fn=worker_init_fn,
+        **loader_kwargs,
     )
     return loader
 
@@ -201,12 +239,15 @@ def main() -> None:
     logger = get_logger("finetune", str(out_dir / "train.log"))
     writer = create_tb_writer(str(out_dir / "tb"))
 
+    train_cfg = cfg["train"]
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    _configure_cuda_speed_flags(train_cfg=train_cfg, device=device, logger=logger)
+
     smoke = args.smoke or bool(cfg["train"].get("smoke", False))
 
     train_loader = _build_loader(cfg, split="train", smoke=smoke)
     val_loader = _build_loader(cfg, split="val", smoke=smoke)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     backbone = _build_backbone(cfg["model"])
 
     if args.pretrained:
@@ -229,7 +270,6 @@ def main() -> None:
         for p in model.backbone.parameters():
             p.requires_grad = False
 
-    train_cfg = cfg["train"]
     batch_size = int(train_cfg.get("batch_size", 2))
     amp_enabled = bool(train_cfg.get("amp", True))
     accum_steps = int(train_cfg.get("accum_steps", 4))
