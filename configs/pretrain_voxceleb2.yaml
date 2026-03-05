@@ -37,9 +37,12 @@ train:
   accum_steps: 8
   num_workers: 4
   amp: true
-  lr: 1.0e-4
+  lr: null
+  blr: 1.6e-3
+  min_lr: 0.0
   weight_decay: 0.05
   warmup_steps: 1000
+  warmup_epochs: null
   log_interval: 10
   val_interval: 200
   grad_clip: 1.0

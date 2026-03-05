@@ -89,15 +89,58 @@ def _build_model(cfg: dict[str, Any]) -> VideoMAE:
     return model
 
 
-def _build_scheduler(optimizer: torch.optim.Optimizer, warmup_steps: int, total_steps: int):
+def _build_scheduler(
+    optimizer: torch.optim.Optimizer,
+    warmup_steps: int,
+    total_steps: int,
+    base_lr: float,
+    min_lr: float,
+):
+    min_lr = min(max(0.0, float(min_lr)), float(base_lr))
+    min_factor = 0.0 if base_lr <= 0 else (min_lr / base_lr)
+
     def lr_lambda(step: int) -> float:
-        if step < warmup_steps:
+        if warmup_steps > 0 and step < warmup_steps:
             return float(step + 1) / float(max(1, warmup_steps))
         progress = float(step - warmup_steps) / float(max(1, total_steps - warmup_steps))
         progress = min(max(progress, 0.0), 1.0)
-        return 0.5 * (1.0 + math.cos(math.pi * progress))
+        cosine = 0.5 * (1.0 + math.cos(math.pi * progress))
+        return min_factor + (1.0 - min_factor) * cosine
 
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
+
+
+def _resolve_learning_rate(
+    train_cfg: dict[str, Any],
+    batch_size: int,
+    accum_steps: int,
+    default_blr: float,
+) -> tuple[float, float, int, int]:
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        world_size = int(torch.distributed.get_world_size())
+    else:
+        world_size = 1
+    eff_batch_size = batch_size * accum_steps * world_size
+    if train_cfg.get("lr") is not None:
+        return float(train_cfg["lr"]), float(train_cfg.get("blr", default_blr)), eff_batch_size, world_size
+    base_lr = float(train_cfg.get("blr", default_blr))
+    lr = base_lr * eff_batch_size / 256.0
+    return lr, base_lr, eff_batch_size, world_size
+
+
+def _resolve_warmup_steps(
+    train_cfg: dict[str, Any],
+    updates_per_epoch: int,
+    default_warmup_steps: int,
+) -> int:
+    warmup_steps_cfg = train_cfg.get("warmup_steps")
+    if warmup_steps_cfg is not None:
+        return max(0, int(warmup_steps_cfg))
+    warmup_epochs_cfg = train_cfg.get("warmup_epochs")
+    if warmup_epochs_cfg is not None:
+        warmup_epochs = max(0.0, float(warmup_epochs_cfg))
+        return int(round(warmup_epochs * updates_per_epoch))
+    return max(0, int(default_warmup_steps))
 
 
 @torch.no_grad()
@@ -160,23 +203,55 @@ def main() -> None:
     model = _build_model(cfg).to(device)
 
     train_cfg = cfg["train"]
+    batch_size = int(train_cfg.get("batch_size", 2))
     amp_enabled = bool(train_cfg.get("amp", True))
     accum_steps = int(train_cfg.get("accum_steps", 4))
     epochs = int(train_cfg.get("epochs", 30))
     max_steps = int(train_cfg.get("max_steps", -1))
     smoke_steps = int(train_cfg.get("smoke_steps", 50))
     smoke = args.smoke or bool(train_cfg.get("smoke", False))
+    lr, blr, eff_batch_size, world_size = _resolve_learning_rate(
+        train_cfg=train_cfg,
+        batch_size=batch_size,
+        accum_steps=accum_steps,
+        default_blr=1.5e-4,
+    )
 
     optimizer = torch.optim.AdamW(
         model.parameters(),
-        lr=float(train_cfg.get("lr", 1e-4)),
+        lr=lr,
         weight_decay=float(train_cfg.get("weight_decay", 0.05)),
+    )
+    logger.info(
+        "LR setup: lr=%.3e, blr=%.3e, eff_batch=%d (batch=%d, accum=%d, world_size=%d)",
+        lr,
+        blr,
+        eff_batch_size,
+        batch_size,
+        accum_steps,
+        world_size,
     )
 
     updates_per_epoch = max(1, math.ceil(len(train_loader) / accum_steps))
     total_updates = smoke_steps if smoke else (max_steps if max_steps > 0 else epochs * updates_per_epoch)
-    warmup_steps = int(train_cfg.get("warmup_steps", 1000))
-    scheduler = _build_scheduler(optimizer, warmup_steps=warmup_steps, total_steps=total_updates)
+    warmup_steps = _resolve_warmup_steps(
+        train_cfg=train_cfg,
+        updates_per_epoch=updates_per_epoch,
+        default_warmup_steps=1000,
+    )
+    min_lr = float(train_cfg.get("min_lr", 0.0))
+    scheduler = _build_scheduler(
+        optimizer,
+        warmup_steps=warmup_steps,
+        total_steps=total_updates,
+        base_lr=lr,
+        min_lr=min_lr,
+    )
+    logger.info(
+        "Scheduler setup: warmup_steps=%d, min_lr=%.3e",
+        warmup_steps,
+        min_lr,
+    )
     scaler = _make_grad_scaler(device=device, amp_enabled=amp_enabled)
 
     start_epoch = 0
