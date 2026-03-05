@@ -1,13 +1,13 @@
 seed: 42
-output_dir: outputs/pretrain_voxceleb2
+output_dir: outputs/pretain_8_4_8
 
 data:
-  root: /path/to/voxceleb2
+  root: /home/froshi/repositories/datasets/voxceleb2
   train_manifest: manifests/voxceleb2_train.csv
   val_manifest: manifests/voxceleb2_val.csv
   clip_len: 32
   stride: 2
-  video_backend: auto
+  video_backend: decord
   align_mode: "off"
   align_cache_dir: null
   color_jitter: true
@@ -33,7 +33,7 @@ train:
   max_steps: -1
   smoke: false
   smoke_steps: 50
-  batch_size: 4
+  batch_size: 8
   accum_steps: 4
   num_workers: 8
   persistent_workers: true
@@ -44,7 +44,7 @@ train:
   allow_tf32_cudnn: true
   float32_matmul_precision: high
   lr: null
-  blr: 1.6e-3
+  blr: 3.2e-3
   min_lr: 0.0
   weight_decay: 0.05
   warmup_steps: null
