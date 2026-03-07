@@ -246,6 +246,18 @@ Checks:
 - masked reconstruction loss path
 - AMP backward
 
+Distributed smoke test:
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 torchrun --nproc_per_node=2 distributed_smoke_test.py
+```
+
+Checks:
+- DDP init from `torchrun`
+- gradient accumulation with `no_sync()`
+- one synchronized optimizer step
+- cross-rank parameter consistency
+
 ## Memory Defaults (RTX 3060 12GB)
 
 Default configs use:
@@ -255,3 +267,30 @@ Default configs use:
 - grad clipping
 
 Increase `batch_size` only after verifying memory headroom.
+
+## Multi-GPU Training
+
+Both training entrypoints support `torchrun` with DistributedDataParallel.
+
+Pretraining on 2 GPUs:
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 torchrun --nproc_per_node=2 -m train.pretrain \
+  --config configs/pretrain_voxceleb2.yaml \
+  data.train_manifest=manifests/voxceleb2_train.csv \
+  data.val_manifest=manifests/voxceleb2_val.csv
+```
+
+Fine-tuning on 2 GPUs:
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 torchrun --nproc_per_node=2 -m train.finetune \
+  --config configs/finetune_disfa.yaml \
+  --pretrained outputs/pretrain_voxceleb2/checkpoints/best.ckpt \
+  data.manifest=manifests/disfa_manifest.csv
+```
+
+Notes:
+- `train.batch_size` is per GPU.
+- Effective batch size is `batch_size * accum_steps * num_gpus`.
+- Only rank 0 writes TensorBoard logs and checkpoints.
