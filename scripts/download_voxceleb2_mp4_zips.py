@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import os
 import re
@@ -72,6 +73,15 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=None,
         help="Optional cap on number of files to download",
+    )
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=None,
+        help=(
+            "Number of concurrent downloads. Default starts one worker per matched "
+            "file so all parts download simultaneously."
+        ),
     )
     return parser.parse_args()
 
@@ -193,6 +203,23 @@ def download_file(url: str, dst: Path, headers: dict[str, str], force: bool) -> 
         raise
 
 
+def download_target(
+    index: int,
+    total: int,
+    repo_path: str,
+    url: str,
+    dst: Path,
+    headers: dict[str, str],
+    force: bool,
+) -> tuple[str, str | None]:
+    print(f"[{index}/{total}] Downloading {repo_path}")
+    try:
+        download_file(url, dst, headers, force=force)
+    except (HTTPError, URLError) as e:
+        return repo_path, str(e)
+    return repo_path, None
+
+
 def main() -> int:
     args = parse_args()
     token = args.token or os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_TOKEN")
@@ -220,15 +247,37 @@ def main() -> int:
         return 0
 
     headers = build_auth_headers(token)
-    for i, repo_path in enumerate(targets, start=1):
-        dst = out_dir / repo_path
-        url = resolve_url(args.repo_id, args.revision, repo_path)
-        print(f"[{i}/{len(targets)}] Downloading {repo_path}")
-        try:
-            download_file(url, dst, headers, force=args.force)
-        except (HTTPError, URLError) as e:
-            print(f"Failed to download {repo_path}: {e}", file=sys.stderr)
-            return 1
+    max_workers = args.jobs if args.jobs is not None else len(targets)
+    if max_workers < 1:
+        print("--jobs must be at least 1", file=sys.stderr)
+        return 1
+
+    print(f"Starting {len(targets)} downloads with {max_workers} worker(s).")
+    failures: list[tuple[str, str]] = []
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [
+            executor.submit(
+                download_target,
+                i,
+                len(targets),
+                repo_path,
+                resolve_url(args.repo_id, args.revision, repo_path),
+                out_dir / repo_path,
+                headers,
+                args.force,
+            )
+            for i, repo_path in enumerate(targets, start=1)
+        ]
+        for future in as_completed(futures):
+            repo_path, error = future.result()
+            if error is None:
+                continue
+            failures.append((repo_path, error))
+
+    if failures:
+        for repo_path, error in failures:
+            print(f"Failed to download {repo_path}: {error}", file=sys.stderr)
+        return 1
 
     print(f"Done. Files saved under: {out_dir.resolve()}")
     return 0
